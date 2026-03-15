@@ -1,5 +1,9 @@
 use std::fmt::Debug;
 
+mod multiple_expectations;
+
+pub use multiple_expectations::{start_expectations, MultipleExpectations};
+
 /// Starts a new expectation chain for the supplied expression.
 #[macro_export]
 macro_rules! expect {
@@ -139,7 +143,7 @@ impl<'a, T> ExpectationChain<'a, T> {
         self
     }
 
-    pub fn conclude_result(self) -> Result<(), String> {
+    fn conclude(&mut self) -> Result<(), String> {
         let location = self.expression.location;
         let mut message = format!(
             "{}:{}:{}\nwhen testing expression\n\n",
@@ -178,11 +182,14 @@ impl<'a, T> ExpectationChain<'a, T> {
         }
     }
 
-    pub fn conclude_panic(self) {
-        if let Err(message) = self.conclude_result() {
-            eprintln!("{}", message);
-            panic!()
+    pub fn conclude_panic(mut self) {
+        if let Err(message) = self.conclude() {
+            panic!("{}", message);
         }
+    }
+
+    pub fn conclude_result(mut self) -> Result<(), String> {
+        self.conclude()
     }
 }
 
