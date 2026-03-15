@@ -92,11 +92,14 @@ pub struct ExpectationChain<'a, T> {
 
     in_negated_mode: bool,
 
-    negations: Vec<bool>,
-
     soft_mode: bool,
 
-    expectations: Vec<Box<dyn Expectation<T> + 'a>>,
+    checks: Vec<Check<'a, T>>,
+}
+
+struct Check<'a, T> {
+    expectation: Box<dyn Expectation<T> + 'a>,
+    is_negated: bool,
 }
 
 impl<'a, T> ExpectationChain<'a, T> {
@@ -104,9 +107,8 @@ impl<'a, T> ExpectationChain<'a, T> {
         Self {
             expression,
             in_negated_mode: false,
-            negations: vec![],
             soft_mode: false,
-            expectations: vec![],
+            checks: vec![],
         }
     }
 
@@ -122,9 +124,10 @@ impl<'a, T> ExpectationChain<'a, T> {
     }
 
     pub fn expecting(mut self, expectation: impl Expectation<T> + 'a) -> Self {
-        self.expectations.push(Box::new(expectation));
-
-        self.negations.push(self.in_negated_mode);
+        self.checks.push(Check {
+            expectation: Box::new(expectation),
+            is_negated: self.in_negated_mode,
+        });
 
         self.in_negated_mode = false;
 
@@ -152,16 +155,14 @@ impl<'a, T> ExpectationChain<'a, T> {
         message.push_str(&format!("    {}\n\n", self.expression.tested_expression));
 
         let mut had_failure = false;
-        for i in 0..self.expectations.len() {
-            let expectation = self.expectations.get(i).unwrap();
-            let is_negated = self.negations.get(i).unwrap();
-
-            if !(is_negated ^ expectation.test(self.expression.actual)) {
+        for check in self.checks.drain(..) {
+            if !(check.is_negated ^ check.expectation.test(self.expression.actual)) {
                 had_failure = true;
 
-                let failure_message =
-                    expectation.message(self.expression.tested_expression, self.expression.actual);
-                let failure_message = if *is_negated {
+                let failure_message = check
+                    .expectation
+                    .message(self.expression.tested_expression, self.expression.actual);
+                let failure_message = if check.is_negated {
                     indented("  ", &format!("NOT {}", failure_message))
                 } else {
                     indented("  ", &failure_message)
