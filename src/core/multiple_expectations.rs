@@ -1,20 +1,9 @@
 use super::ExpectationChain;
 
-/// Abstracts over different [`ExpectationChain`]s.
-pub(crate) trait Conclude {
-    fn conclude(&mut self) -> Result<(), String>;
-}
-
-impl<'a, T> Conclude for ExpectationChain<'a, T> {
-    fn conclude(&mut self) -> Result<(), String> {
-        ExpectationChain::conclude(self)
-    }
-}
-
 /// Checks multiple expectations
 #[must_use = "This doesn't do anything without calling a `conclude_*()` method"]
-pub struct MultipleExpectations<'a> {
-    pub(crate) many: Vec<Box<dyn Conclude + 'a>>,
+pub struct MultipleExpectations {
+    pub(crate) errors: String,
     pub(crate) panic_on_drop: bool,
 }
 
@@ -22,14 +11,14 @@ pub struct MultipleExpectations<'a> {
 ///
 /// Fluently build up expectations with [`.and()`][MultipleExpectations::and] or
 /// stepwise expectations with [`.now()`][MultipleExpectations::now].
-pub fn start_expectations<'a>() -> MultipleExpectations<'a> {
+pub fn start_expectations() -> MultipleExpectations {
     MultipleExpectations {
-        many: Vec::new(),
+        errors: String::new(),
         panic_on_drop: true,
     }
 }
 
-impl<'a> MultipleExpectations<'a> {
+impl MultipleExpectations {
     /// Fluently adds an expectation.
     ///
     /// ```rust
@@ -44,7 +33,7 @@ impl<'a> MultipleExpectations<'a> {
     ///     .conclude_panic();
     /// # }
     /// ```
-    pub fn and<T>(mut self, chain: ExpectationChain<'a, T>) -> Self {
+    pub fn and<T>(mut self, chain: ExpectationChain<T>) -> Self {
         self.here(chain);
         self
     }
@@ -75,8 +64,10 @@ impl<'a> MultipleExpectations<'a> {
     /// checks.conclude_panic();
     /// # }
     /// ```
-    pub fn here<T>(&mut self, chain: ExpectationChain<'a, T>) -> &mut Self {
-        self.many.push(Box::new(chain));
+    pub fn here<T>(&mut self, mut chain: ExpectationChain<T>) -> &mut Self {
+        if let Err(err) = chain.conclude() {
+            self.errors.push_str(&err);
+        }
         self
     }
 
@@ -88,18 +79,10 @@ impl<'a> MultipleExpectations<'a> {
 
     pub fn conclude_result(mut self) -> Result<(), String> {
         self.panic_on_drop = false;
-        let msg = self
-            .many
-            .iter_mut()
-            .filter_map(|it| it.conclude().err())
-            .fold(String::new(), |mut acc, err| {
-                acc.push_str(&err);
-                acc
-            });
-        if msg.trim().is_empty() {
+        if self.errors.trim().is_empty() {
             Ok(())
         } else {
-            Err(msg)
+            Err(self.errors)
         }
     }
 }
